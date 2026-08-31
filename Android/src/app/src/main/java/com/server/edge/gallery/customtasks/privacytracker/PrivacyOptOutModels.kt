@@ -1,31 +1,36 @@
 package com.server.edge.gallery.customtasks.privacytracker
 
-import com.google.gson.annotations.SerializedName
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.util.UUID
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
+@Serializable
 enum class PrivacyRequestType {
-  @SerializedName("opt_out") OPT_OUT,
-  @SerializedName("deletion") DELETION,
-  @SerializedName("access") ACCESS,
+  @SerialName("opt_out") OPT_OUT,
+  @SerialName("deletion") DELETION,
+  @SerialName("access") ACCESS,
 }
 
+@Serializable
 enum class PrivacyRequestStatus {
-  @SerializedName("not_started") NOT_STARTED,
-  @SerializedName("draft_ready") DRAFT_READY,
-  @SerializedName("submitted") SUBMITTED,
-  @SerializedName("follow_up_due") FOLLOW_UP_DUE,
-  @SerializedName("completed") COMPLETED,
+  @SerialName("not_started") NOT_STARTED,
+  @SerialName("draft_ready") DRAFT_READY,
+  @SerialName("submitted") SUBMITTED,
+  @SerialName("follow_up_due") FOLLOW_UP_DUE,
+  @SerialName("completed") COMPLETED,
 }
 
+@Serializable
 data class PrivacyHistoryEntry(
   val timestamp: String = nowTimestamp(),
   val title: String,
   val notes: String = "",
 )
 
+@Serializable
 data class PrivacyBrokerEntry(
   val id: String = UUID.randomUUID().toString(),
   val brokerName: String,
@@ -46,6 +51,7 @@ data class PrivacyBrokerEntry(
   val updatedAt: String = nowTimestamp(),
 )
 
+@Serializable
 data class PrivacyTrackerExport(
   val version: Int = 1,
   val exportedAt: String = nowTimestamp(),
@@ -68,6 +74,8 @@ enum class PrivacyStatusFilter {
   SUBMITTED,
   COMPLETED,
 }
+
+const val DEFAULT_SUBJECT_PREFIX = "Privacy request:"
 
 fun nowTimestamp(): String = OffsetDateTime.now(ZoneOffset.UTC).toString()
 
@@ -160,7 +168,7 @@ fun defaultSubject(brokerName: String, requestType: PrivacyRequestType): String 
       PrivacyRequestType.DELETION -> "deletion"
       PrivacyRequestType.ACCESS -> "access"
     }
-  return "Privacy request: $requestLabel for $brokerName"
+  return "$DEFAULT_SUBJECT_PREFIX $requestLabel for $brokerName"
 }
 
 fun defaultRequestBody(brokerName: String, requestType: PrivacyRequestType): String {

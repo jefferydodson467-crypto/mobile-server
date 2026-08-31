@@ -2,36 +2,39 @@ package com.server.edge.gallery.customtasks.privacytracker
 
 import android.content.Context
 import androidx.core.content.edit
-import com.google.gson.Gson
-import com.google.gson.JsonParseException
-import com.google.gson.reflect.TypeToken
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 @Singleton
 class PrivacyOptOutRepository @Inject constructor(@ApplicationContext context: Context) {
   private val prefs =
-    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-  private val gson = Gson()
-  private val entryListType = object : TypeToken<List<PrivacyBrokerEntry>>() {}.type
+    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+  private val storageJson = Json { ignoreUnknownKeys = true }
+  private val exportJson = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
-  fun loadEntries(): List<PrivacyBrokerEntry> {
-    val json = prefs.getString(KEY_ENTRIES, null) ?: return emptyList()
-    return runCatching { gson.fromJson<List<PrivacyBrokerEntry>>(json, entryListType) ?: emptyList() }
-      .getOrDefault(emptyList())
+  fun hasSavedEntries(): Boolean {
+    return prefs.contains(KEY_ENTRIES)
+  }
+
+  fun loadEntries(): Result<List<PrivacyBrokerEntry>> {
+    val raw = prefs.getString(KEY_ENTRIES, null) ?: return Result.success(emptyList())
+    return runCatching { storageJson.decodeFromString<List<PrivacyBrokerEntry>>(raw) }
   }
 
   fun saveEntries(entries: List<PrivacyBrokerEntry>) {
-    prefs.edit { putString(KEY_ENTRIES, gson.toJson(entries)) }
+    prefs.edit { putString(KEY_ENTRIES, storageJson.encodeToString(entries)) }
   }
 
-  fun importEntries(json: String): List<PrivacyBrokerEntry> {
-    val wrapped = runCatching { gson.fromJson(json, PrivacyTrackerExport::class.java) }.getOrNull()
+  fun importEntries(rawJson: String): List<PrivacyBrokerEntry> {
+    val wrapped = runCatching { exportJson.decodeFromString<PrivacyTrackerExport>(rawJson) }.getOrNull()
     val entries =
       wrapped?.entries
-        ?: runCatching { gson.fromJson<List<PrivacyBrokerEntry>>(json, entryListType) }
-          .getOrElse { throw JsonParseException("Invalid import format.") }
+        ?: runCatching { exportJson.decodeFromString<List<PrivacyBrokerEntry>>(rawJson) }
+          .getOrElse { throw SerializationException("Invalid import format.") }
     return entries
       .map { entry ->
         val subject =
@@ -52,7 +55,7 @@ class PrivacyOptOutRepository @Inject constructor(@ApplicationContext context: C
   }
 
   fun exportEntries(entries: List<PrivacyBrokerEntry>): String {
-    return gson.toJson(PrivacyTrackerExport(entries = entries))
+    return exportJson.encodeToString(PrivacyTrackerExport(entries = entries))
   }
 
   companion object {

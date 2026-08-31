@@ -15,15 +15,27 @@ class PrivacyOptOutViewModel @Inject constructor(
   val uiState = _uiState.asStateFlow()
 
   init {
+    val hasSavedEntries = repository.hasSavedEntries()
     val savedEntries = repository.loadEntries()
-    val initialEntries = if (savedEntries.isEmpty()) starterPrivacyBrokerEntries() else savedEntries
-    if (savedEntries.isEmpty()) {
+    val initialEntries =
+      when {
+        !hasSavedEntries -> starterPrivacyBrokerEntries()
+        savedEntries.isSuccess -> savedEntries.getOrDefault(emptyList())
+        else -> emptyList()
+      }
+    if (!hasSavedEntries) {
       repository.saveEntries(initialEntries)
     }
     _uiState.value =
       PrivacyOptOutUiState(
         entries = initialEntries,
         selectedEntryId = initialEntries.firstOrNull()?.id,
+        errorMessage =
+          if (hasSavedEntries && savedEntries.isFailure) {
+            "Saved tracker data could not be loaded. Import a backup or restore starter entries."
+          } else {
+            ""
+          },
       )
   }
 
@@ -55,13 +67,13 @@ class PrivacyOptOutViewModel @Inject constructor(
         history = listOf(PrivacyHistoryEntry(title = "Entry created")),
       )
     saveEntries(entries = listOf(newEntry) + uiState.value.entries, selectedEntryId = newEntry.id)
-    setInfoMessage("Added a new tracker entry.")
+    showInfoMessage("Added a new tracker entry.")
   }
 
   fun restoreStarterEntries() {
     val entries = starterPrivacyBrokerEntries()
     saveEntries(entries = entries, selectedEntryId = entries.firstOrNull()?.id)
-    setInfoMessage("Restored starter broker entries.")
+    showInfoMessage("Restored starter broker entries.")
   }
 
   fun removeSelectedEntry() {
@@ -98,7 +110,7 @@ class PrivacyOptOutViewModel @Inject constructor(
         history = entry.history + PrivacyHistoryEntry(title = "Draft updated"),
       )
     }
-    setInfoMessage("Saved draft changes.")
+    showInfoMessage("Saved draft changes.")
   }
 
   fun markSubmitted() {
@@ -111,7 +123,7 @@ class PrivacyOptOutViewModel @Inject constructor(
           entry.history + PrivacyHistoryEntry(title = "Marked as submitted", notes = "Manual submission recorded."),
       )
     }
-    setInfoMessage("Recorded manual submission.")
+    showInfoMessage("Recorded manual submission.")
   }
 
   fun markFollowUpDue() {
@@ -123,7 +135,7 @@ class PrivacyOptOutViewModel @Inject constructor(
             PrivacyHistoryEntry(title = "Follow-up needed", notes = "Reminder created for follow-up."),
       )
     }
-    setInfoMessage("Marked follow-up as due.")
+    showInfoMessage("Marked follow-up as due.")
   }
 
   fun markCompleted() {
@@ -134,12 +146,12 @@ class PrivacyOptOutViewModel @Inject constructor(
         history = entry.history + PrivacyHistoryEntry(title = "Marked as completed"),
       )
     }
-    setInfoMessage("Recorded completion.")
+    showInfoMessage("Recorded completion.")
   }
 
   fun setDueInDays(days: Long) {
     updateSelectedEntry { entry -> entry.copy(followUpDueOn = defaultFollowUpDate(days)) }
-    setInfoMessage("Updated reminder date.")
+    showInfoMessage("Updated reminder date.")
   }
 
   fun exportEntries() {
@@ -152,60 +164,53 @@ class PrivacyOptOutViewModel @Inject constructor(
   fun importEntries() {
     val raw = uiState.value.importExportText.trim()
     if (raw.isEmpty()) {
-      setErrorMessage("Paste exported JSON before importing.")
+      showErrorMessage("Paste exported JSON before importing.")
       return
     }
     val imported =
       runCatching { repository.importEntries(raw) }
         .getOrElse {
-          setErrorMessage(it.message ?: "Failed to import tracker data.")
+          showErrorMessage(it.message ?: "Failed to import tracker data.")
           return
         }
     if (imported.isEmpty()) {
-      setErrorMessage("Import did not contain any tracker entries.")
+      showErrorMessage("Import did not contain any tracker entries.")
       return
     }
     saveEntries(entries = imported, selectedEntryId = imported.first().id)
-    setInfoMessage("Imported tracker data.")
-  }
-
-  fun clearMessages() {
-    _uiState.update { it.copy(infoMessage = "", errorMessage = "") }
-  }
-
-  fun filteredEntries(): List<PrivacyBrokerEntry> {
-    return when (uiState.value.statusFilter) {
-      PrivacyStatusFilter.ALL -> uiState.value.entries
-      PrivacyStatusFilter.ACTION_NEEDED ->
-        uiState.value.entries.filter {
-          it.status == PrivacyRequestStatus.NOT_STARTED ||
-            it.status == PrivacyRequestStatus.DRAFT_READY ||
-            it.status == PrivacyRequestStatus.FOLLOW_UP_DUE ||
-            isOverdue(it)
-        }
-      PrivacyStatusFilter.SUBMITTED ->
-        uiState.value.entries.filter {
-          it.status == PrivacyRequestStatus.SUBMITTED || it.status == PrivacyRequestStatus.FOLLOW_UP_DUE
-        }
-      PrivacyStatusFilter.COMPLETED ->
-        uiState.value.entries.filter { it.status == PrivacyRequestStatus.COMPLETED }
-    }
+    showInfoMessage("Imported tracker data.")
   }
 
   private fun saveEntries(
     entries: List<PrivacyBrokerEntry>,
     selectedEntryId: String?,
-    message: String? = "",
+    message: String? = null,
   ) {
     repository.saveEntries(entries)
     _uiState.update {
       it.copy(
         entries = entries,
         selectedEntryId = selectedEntryId ?: entries.firstOrNull()?.id,
-        infoMessage = message ?: it.infoMessage,
+        infoMessage = message ?: "",
         errorMessage = "",
       )
     }
+  }
+
+  fun onDraftCopied() {
+    setInfoMessage("Copied request draft.")
+  }
+
+  fun onEmailOpened() {
+    setInfoMessage("Opened email draft.")
+  }
+
+  fun onPortalOpened() {
+    setInfoMessage("Opened privacy portal.")
+  }
+
+  fun onExternalActionFailed(message: String) {
+    setErrorMessage(message)
   }
 
   private fun setInfoMessage(message: String) {

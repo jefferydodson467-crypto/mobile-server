@@ -12,7 +12,7 @@ import dagger.multibindings.IntoSet
 internal object PrivacyOptOutModule {
   @Provides
   @IntoSet
-  fun provideTask(): CustomTask {
-    return PrivacyOptOutTask()
+  fun provideTask(task: PrivacyOptOutTask): CustomTask {
+    return task
   }
 }

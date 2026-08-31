@@ -1,6 +1,5 @@
 package com.server.edge.gallery.customtasks.privacytracker
 
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.horizontalScroll
@@ -26,6 +25,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -42,7 +44,7 @@ fun PrivacyOptOutScreen(
   val uiState by viewModel.uiState.collectAsState()
   val clipboardManager = LocalClipboardManager.current
   val context = LocalContext.current
-  val filteredEntries = viewModel.filteredEntries()
+  val filteredEntries = filterEntries(uiState.entries, uiState.statusFilter)
   val selectedEntry = uiState.entries.find { it.id == uiState.selectedEntryId }
   val overdueEntries = uiState.entries.filter(::isOverdue)
   val submittedCount =
@@ -166,7 +168,12 @@ fun PrivacyOptOutScreen(
                 val refreshedType = entry.requestType
                 entry.copy(
                   brokerName = value,
-                  requestSubject = if (entry.requestSubject.startsWith("Privacy request:")) defaultSubject(value, refreshedType) else entry.requestSubject,
+                  requestSubject =
+                    if (entry.requestSubject.startsWith(DEFAULT_SUBJECT_PREFIX)) {
+                      defaultSubject(value, refreshedType)
+                    } else {
+                      entry.requestSubject
+                    },
                 )
               }
             },
@@ -229,24 +236,14 @@ fun PrivacyOptOutScreen(
             TextButton(onClick = viewModel::markCompleted) { Text("Complete") }
           }
 
-          OutlinedTextField(
+          DateTextField(
             value = selectedEntry.requestedOn,
-            onValueChange = { value ->
-              if (isValidIsoDate(value)) {
-                viewModel.updateSelectedEntry { it.copy(requestedOn = value) }
-              }
-            },
-            modifier = Modifier.fillMaxWidth(),
+            onValidValue = { value -> viewModel.updateSelectedEntry { it.copy(requestedOn = value) } },
             label = { Text("Requested on (YYYY-MM-DD)") },
           )
-          OutlinedTextField(
+          DateTextField(
             value = selectedEntry.followUpDueOn,
-            onValueChange = { value ->
-              if (isValidIsoDate(value)) {
-                viewModel.updateSelectedEntry { it.copy(followUpDueOn = value) }
-              }
-            },
-            modifier = Modifier.fillMaxWidth(),
+            onValidValue = { value -> viewModel.updateSelectedEntry { it.copy(followUpDueOn = value) } },
             label = { Text("Follow-up due (YYYY-MM-DD)") },
           )
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
@@ -254,14 +251,9 @@ fun PrivacyOptOutScreen(
             AssistChip(onClick = { viewModel.setDueInDays(30) }, label = { Text("+30d") })
             AssistChip(onClick = { viewModel.setDueInDays(45) }, label = { Text("+45d") })
           }
-          OutlinedTextField(
+          DateTextField(
             value = selectedEntry.completedOn,
-            onValueChange = { value ->
-              if (isValidIsoDate(value)) {
-                viewModel.updateSelectedEntry { it.copy(completedOn = value) }
-              }
-            },
-            modifier = Modifier.fillMaxWidth(),
+            onValidValue = { value -> viewModel.updateSelectedEntry { it.copy(completedOn = value) } },
             label = { Text("Completed on (YYYY-MM-DD)") },
           )
           OutlinedTextField(
@@ -304,20 +296,24 @@ fun PrivacyOptOutScreen(
                 clipboardManager.setText(
                   AnnotatedString("${selectedEntry.requestSubject}\n\n${selectedEntry.requestBody}")
                 )
-                viewModel.clearMessages()
+                viewModel.onDraftCopied()
               }
             ) {
               Text("Copy draft")
             }
             Button(
               onClick = {
-                if (uiState.guidanceAccepted) {
+                val error =
                   openEmailDraft(
                     context = context,
                     address = selectedEntry.requestEmail,
                     subject = selectedEntry.requestSubject,
                     body = selectedEntry.requestBody,
                   )
+                if (error == null) {
+                  viewModel.onEmailOpened()
+                } else {
+                  viewModel.onExternalActionFailed(error)
                 }
               },
               enabled = uiState.guidanceAccepted && selectedEntry.requestEmail.isNotBlank(),
@@ -326,8 +322,11 @@ fun PrivacyOptOutScreen(
             }
             Button(
               onClick = {
-                if (uiState.guidanceAccepted) {
-                  openBrowser(context, selectedEntry.websiteUrl)
+                val error = openBrowser(context, selectedEntry.websiteUrl)
+                if (error == null) {
+                  viewModel.onPortalOpened()
+                } else {
+                  viewModel.onExternalActionFailed(error)
                 }
               },
               enabled = uiState.guidanceAccepted && selectedEntry.websiteUrl.isNotBlank(),
@@ -394,11 +393,32 @@ private fun SummaryChip(label: String, value: String) {
 }
 
 @Composable
+private fun DateTextField(
+  value: String,
+  onValidValue: (String) -> Unit,
+  label: @Composable () -> Unit,
+) {
+  var draft by remember(value) { mutableStateOf(value) }
+  OutlinedTextField(
+    value = draft,
+    onValueChange = { newValue ->
+      draft = newValue
+      if (newValue.isBlank() || (newValue.length == 10 && isValidIsoDate(newValue))) {
+        onValidValue(newValue)
+      }
+    },
+    modifier = Modifier.fillMaxWidth(),
+    label = label,
+  )
+}
+
+@Composable
 private fun BrokerListCard(
   entry: PrivacyBrokerEntry,
   selected: Boolean,
   onClick: () -> Unit,
 ) {
+  val overdue = isOverdue(entry)
   ElevatedCard(
     onClick = onClick,
     colors =
@@ -413,9 +433,9 @@ private fun BrokerListCard(
       Text("${entry.requestType.label()} • ${entry.status.label()}", style = MaterialTheme.typography.bodySmall)
       if (entry.followUpDueOn.isNotBlank()) {
         Text(
-          "Follow-up: ${entry.followUpDueOn}${if (isOverdue(entry)) " (overdue)" else ""}",
+          "Follow-up: ${entry.followUpDueOn}${if (overdue) " (overdue)" else ""}",
           style = MaterialTheme.typography.bodySmall,
-          color = if (isOverdue(entry)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+          color = if (overdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
       if (entry.requestEmail.isNotBlank()) {
@@ -448,25 +468,52 @@ private fun openEmailDraft(
   address: String,
   subject: String,
   body: String,
-) {
+): String? {
   val intent =
     Intent(Intent.ACTION_SENDTO).apply {
-      data = Uri.parse("mailto:${Uri.encode(address)}")
+      data = Uri.fromParts("mailto", address, null)
       putExtra(Intent.EXTRA_SUBJECT, subject)
       putExtra(Intent.EXTRA_TEXT, body)
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-  runCatching { context.startActivity(intent) }.recoverCatching {
-    throw ActivityNotFoundException("No mail app available.")
-  }
+  return runCatching {
+      context.startActivity(intent)
+      null
+    }
+    .getOrElse { "No mail app available to open the request draft." }
 }
 
-private fun openBrowser(context: android.content.Context, url: String) {
-  if (url.isBlank()) return
+private fun openBrowser(context: android.content.Context, url: String): String? {
+  if (url.isBlank()) return "Add a privacy portal URL first."
   val normalizedUrl = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
   val intent =
     Intent(Intent.ACTION_VIEW, Uri.parse(normalizedUrl)).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-  runCatching { context.startActivity(intent) }
+  return runCatching {
+      context.startActivity(intent)
+      null
+    }
+    .getOrElse { "No browser is available to open the privacy portal." }
+}
+
+private fun filterEntries(
+  entries: List<PrivacyBrokerEntry>,
+  filter: PrivacyStatusFilter,
+): List<PrivacyBrokerEntry> {
+  return when (filter) {
+    PrivacyStatusFilter.ALL -> entries
+    PrivacyStatusFilter.ACTION_NEEDED ->
+      entries.filter {
+        it.status == PrivacyRequestStatus.NOT_STARTED ||
+          it.status == PrivacyRequestStatus.DRAFT_READY ||
+          it.status == PrivacyRequestStatus.FOLLOW_UP_DUE ||
+          isOverdue(it)
+      }
+    PrivacyStatusFilter.SUBMITTED ->
+      entries.filter {
+        it.status == PrivacyRequestStatus.SUBMITTED || it.status == PrivacyRequestStatus.FOLLOW_UP_DUE
+      }
+    PrivacyStatusFilter.COMPLETED -> entries.filter { it.status == PrivacyRequestStatus.COMPLETED }
+  }
 }
