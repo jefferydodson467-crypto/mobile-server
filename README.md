@@ -30,7 +30,7 @@ Because the server perfectly mimics the standard OpenAI API structure (`/v1/mode
 - **Built-in Tunneling:** One-tap toggle to instantly expose your server to the internet via Ngrok or Cloudflare Tunnels (bypasses NATs and firewalls).
 - **Foreground Service:** The server and the LLM remain running in the background even when your screen is off.
 - **100% Private:** Your prompts and data never leave the phone (except via your own encrypted tunnel).
-- **Privacy Request Tracker:** Draft and track lawful data-broker opt-out, deletion, and access requests locally on-device.
+- **Privacy Request Tracker:** Draft and track lawful data-broker opt-out, deletion, and access requests locally on-device, plus organize low-cost legal-help outreach.
 
 ---
 

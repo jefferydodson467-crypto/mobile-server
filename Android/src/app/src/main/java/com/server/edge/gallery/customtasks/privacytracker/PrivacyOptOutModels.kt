@@ -56,6 +56,22 @@ data class PrivacyTrackerExport(
   val version: Int = 1,
   val exportedAt: String = nowTimestamp(),
   val entries: List<PrivacyBrokerEntry>,
+  val legalHelpProfile: LegalHelpProfile = LegalHelpProfile(),
+)
+
+@Serializable
+data class LegalHelpProfile(
+  val state: String = "",
+  val county: String = "",
+  val chargeLabel: String = "",
+  val budgetNotes: String = "",
+  val nextCourtDate: String = "",
+  val publicDefenderRequested: Boolean = false,
+  val gatherDocuments: String =
+    "Charging document, bond conditions, court date, police report number, witness list, texts, videos, and prior orders.",
+  val contactScript: String =
+    "Hello, I need help with a criminal case and have limited funds. Do you offer a free consultation, payment plans, flat fees, or public-defender/low-income referrals?",
+  val notes: String = "",
 )
 
 data class PrivacyOptOutUiState(
@@ -66,6 +82,7 @@ data class PrivacyOptOutUiState(
   val infoMessage: String = "",
   val errorMessage: String = "",
   val guidanceAccepted: Boolean = false,
+  val legalHelpProfile: LegalHelpProfile = LegalHelpProfile(),
 )
 
 enum class PrivacyStatusFilter {

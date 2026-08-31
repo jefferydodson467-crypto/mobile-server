@@ -20,8 +20,8 @@ class PrivacyOptOutTask @Inject constructor() : CustomTask {
       category = CategoryInfo(id = "privacy", label = "Privacy"),
       icon = Icons.Outlined.VerifiedUser,
       description =
-        "Track lawful data-broker opt-out, deletion, and access requests on-device. Draft request text, record manual submissions, set follow-up reminders, and export your audit trail without sending data automatically.",
-      shortDescription = "Track privacy requests",
+        "Track lawful privacy requests on-device and organize low-cost legal-help outreach. Draft request text, record manual submissions, prepare attorney intake details, and export your audit trail without sending data automatically.",
+      shortDescription = "Privacy and legal help",
       sourceCodeUrl =
         "https://github.com/jefferydodson467-crypto/mobile-server/tree/main/Android/src/app/src/main/java/com/server/edge/gallery/customtasks/privacytracker",
       models =
@@ -30,7 +30,7 @@ class PrivacyOptOutTask @Inject constructor() : CustomTask {
             name = "Privacy Tracker Workspace",
             displayName = "Privacy Tracker Workspace",
             info =
-              "Local-only tracker for privacy requests. No model download is required and submissions remain manual.",
+              "Local-only workspace for privacy requests and legal-help preparation. No model download is required and all outreach stays manual.",
             localFileRelativeDirPathOverride = "privacy_tracker/",
           )
         ),

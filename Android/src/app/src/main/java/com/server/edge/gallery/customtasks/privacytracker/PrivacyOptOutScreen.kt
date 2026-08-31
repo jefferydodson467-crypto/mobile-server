@@ -46,6 +46,7 @@ fun PrivacyOptOutScreen(
   val context = LocalContext.current
   val filteredEntries = filterEntries(uiState.entries, uiState.statusFilter)
   val selectedEntry = uiState.entries.find { it.id == uiState.selectedEntryId }
+  val legalHelpProfile = uiState.legalHelpProfile
   val overdueEntries = uiState.entries.filter(::isOverdue)
   val submittedCount =
     uiState.entries.count {
@@ -66,7 +67,7 @@ fun PrivacyOptOutScreen(
       Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Privacy request tracker", style = MaterialTheme.typography.titleLarge)
         Text(
-          "This workflow is limited to lawful privacy management. It drafts requests, opens your mail or browser, and records your manual follow-up history. It does not auto-submit requests or alter third-party systems.",
+          "This workflow is limited to lawful privacy management and legal-help preparation. It drafts requests, opens your mail or browser, helps prepare attorney outreach, and records your manual follow-up history. It does not auto-submit requests or alter third-party systems.",
           style = MaterialTheme.typography.bodyMedium,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -79,6 +80,121 @@ fun PrivacyOptOutScreen(
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 12.dp),
           )
+        }
+      }
+    }
+
+    ElevatedCard {
+      Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Low-cost legal help finder", style = MaterialTheme.typography.titleMedium)
+        Text(
+          "Use this section to organize public defender, legal aid, bar referral, and low-cost attorney outreach. It cannot guarantee outcomes or replace legal advice.",
+          style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+          value = legalHelpProfile.state,
+          onValueChange = { value -> viewModel.updateLegalHelpProfile { it.copy(state = value) } },
+          modifier = Modifier.fillMaxWidth(),
+          label = { Text("State") },
+        )
+        OutlinedTextField(
+          value = legalHelpProfile.county,
+          onValueChange = { value -> viewModel.updateLegalHelpProfile { it.copy(county = value) } },
+          modifier = Modifier.fillMaxWidth(),
+          label = { Text("County") },
+        )
+        OutlinedTextField(
+          value = legalHelpProfile.chargeLabel,
+          onValueChange = { value -> viewModel.updateLegalHelpProfile { it.copy(chargeLabel = value) } },
+          modifier = Modifier.fillMaxWidth(),
+          label = { Text("Charge or case label") },
+          placeholder = { Text("Example: misdemeanor domestic assault") },
+        )
+        OutlinedTextField(
+          value = legalHelpProfile.budgetNotes,
+          onValueChange = { value -> viewModel.updateLegalHelpProfile { it.copy(budgetNotes = value) } },
+          modifier = Modifier.fillMaxWidth(),
+          label = { Text("Budget / affordability notes") },
+          placeholder = { Text("Example: low-cost, payment plan, or court-appointed") },
+          minLines = 2,
+        )
+        DateTextField(
+          value = legalHelpProfile.nextCourtDate,
+          onValidValue = { value -> viewModel.updateLegalHelpProfile { it.copy(nextCourtDate = value) } },
+          label = { Text("Next court date (YYYY-MM-DD)") },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Checkbox(
+            checked = legalHelpProfile.publicDefenderRequested,
+            onCheckedChange = { checked ->
+              viewModel.updateLegalHelpProfile { it.copy(publicDefenderRequested = checked) }
+            },
+          )
+          Text(
+            "I have already asked the court about a public defender or indigent-defense application.",
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(top = 12.dp),
+          )
+        }
+        OutlinedTextField(
+          value = legalHelpProfile.gatherDocuments,
+          onValueChange = { value -> viewModel.updateLegalHelpProfile { it.copy(gatherDocuments = value) } },
+          modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+          label = { Text("Documents to gather") },
+          minLines = 4,
+        )
+        OutlinedTextField(
+          value = legalHelpProfile.contactScript,
+          onValueChange = { value -> viewModel.updateLegalHelpProfile { it.copy(contactScript = value) } },
+          modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+          label = { Text("Call / intake script") },
+          minLines = 4,
+        )
+        OutlinedTextField(
+          value = legalHelpProfile.notes,
+          onValueChange = { value -> viewModel.updateLegalHelpProfile { it.copy(notes = value) } },
+          modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+          label = { Text("Attorney search notes") },
+          minLines = 4,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+          Button(
+            onClick = {
+              clipboardManager.setText(AnnotatedString(buildLegalHelpChecklist(legalHelpProfile)))
+              viewModel.onLegalHelpChecklistCopied()
+            },
+            enabled = hasLegalHelpProfileContent(legalHelpProfile),
+          ) { Text("Copy checklist") }
+          Button(
+            onClick = {
+              val error = openBrowser(context, publicDefenderSearchUrl(legalHelpProfile))
+              if (error == null) viewModel.onPortalOpened() else viewModel.onExternalActionFailed(error)
+            },
+            enabled = uiState.guidanceAccepted && legalHelpProfile.state.isNotBlank(),
+          ) { Text("Find public defender") }
+          Button(
+            onClick = {
+              val error = openBrowser(context, legalAidSearchUrl(legalHelpProfile))
+              if (error == null) viewModel.onPortalOpened() else viewModel.onExternalActionFailed(error)
+            },
+            enabled = uiState.guidanceAccepted && legalHelpProfile.state.isNotBlank(),
+          ) { Text("Find legal aid") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+          Button(
+            onClick = {
+              val error = openBrowser(context, barReferralSearchUrl(legalHelpProfile))
+              if (error == null) viewModel.onPortalOpened() else viewModel.onExternalActionFailed(error)
+            },
+            enabled = uiState.guidanceAccepted && legalHelpProfile.state.isNotBlank(),
+          ) { Text("State bar referral") }
+          Button(
+            onClick = {
+              val error = openBrowser(context, lowCostAttorneySearchUrl(legalHelpProfile))
+              if (error == null) viewModel.onPortalOpened() else viewModel.onExternalActionFailed(error)
+            },
+            enabled = uiState.guidanceAccepted && legalHelpProfile.state.isNotBlank(),
+          ) { Text("Low-cost attorney search") }
         }
       }
     }
@@ -484,8 +600,13 @@ private fun openEmailDraft(
 }
 
 private fun openBrowser(context: android.content.Context, url: String): String? {
-  if (url.isBlank()) return "Add a privacy portal URL first."
-  val normalizedUrl = if (url.startsWith("http://") || url.startsWith("https://")) url else "https://$url"
+  if (url.isBlank()) return "Add a destination URL or search input first."
+  val normalizedUrl =
+    when {
+      url.startsWith("https://") -> url
+      url.startsWith("http://") -> return "Replace http:// with https:// before opening this link."
+      else -> "https://$url"
+    }
   val intent =
     Intent(Intent.ACTION_VIEW, Uri.parse(normalizedUrl)).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -494,7 +615,7 @@ private fun openBrowser(context: android.content.Context, url: String): String? 
       context.startActivity(intent)
       null
     }
-    .getOrElse { "No browser is available to open the privacy portal." }
+    .getOrElse { "No browser is available to open the link." }
 }
 
 private fun filterEntries(
@@ -516,4 +637,59 @@ private fun filterEntries(
       }
     PrivacyStatusFilter.COMPLETED -> entries.filter { it.status == PrivacyRequestStatus.COMPLETED }
   }
+}
+
+private fun buildLegalHelpChecklist(profile: LegalHelpProfile): String {
+  return buildString {
+    appendLine("Low-cost legal help search")
+    appendLine()
+    appendLine("State: ${profile.state}")
+    appendLine("County: ${profile.county}")
+    appendLine("Case: ${profile.chargeLabel}")
+    appendLine("Budget: ${profile.budgetNotes}")
+    appendLine("Next court date: ${profile.nextCourtDate}")
+    appendLine("Public defender already requested: ${if (profile.publicDefenderRequested) "Yes" else "No"}")
+    appendLine()
+    appendLine("Documents to gather:")
+    appendLine(profile.gatherDocuments)
+    appendLine()
+    appendLine("Intake script:")
+    appendLine(profile.contactScript)
+    appendLine()
+    appendLine("Notes:")
+    append(profile.notes)
+  }
+}
+
+private fun publicDefenderSearchUrl(profile: LegalHelpProfile): String {
+  return googleSearchUrl("${profile.county} ${profile.state} public defender office criminal defense")
+}
+
+private fun legalAidSearchUrl(profile: LegalHelpProfile): String {
+  return googleSearchUrl("${profile.county} ${profile.state} legal aid criminal defense low income")
+}
+
+private fun barReferralSearchUrl(profile: LegalHelpProfile): String {
+  return googleSearchUrl("${profile.state} state bar lawyer referral criminal defense")
+}
+
+private fun lowCostAttorneySearchUrl(profile: LegalHelpProfile): String {
+  return googleSearchUrl(
+    "${profile.county} ${profile.state} ${profile.chargeLabel.ifBlank { "criminal defense" }} attorney free consultation payment plan"
+  )
+}
+
+private fun googleSearchUrl(query: String): String {
+  return "https://www.google.com/search?q=${Uri.encode(query)}"
+}
+
+private fun hasLegalHelpProfileContent(profile: LegalHelpProfile): Boolean {
+  return profile.state.isNotBlank() ||
+    profile.county.isNotBlank() ||
+    profile.chargeLabel.isNotBlank() ||
+    profile.budgetNotes.isNotBlank() ||
+    profile.nextCourtDate.isNotBlank() ||
+    profile.gatherDocuments.isNotBlank() ||
+    profile.contactScript.isNotBlank() ||
+    profile.notes.isNotBlank()
 }

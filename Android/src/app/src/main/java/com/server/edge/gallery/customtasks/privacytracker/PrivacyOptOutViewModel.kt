@@ -17,6 +17,7 @@ class PrivacyOptOutViewModel @Inject constructor(
   init {
     val hasSavedEntries = repository.hasSavedEntries()
     val savedEntries = repository.loadEntries()
+    val savedLegalHelpProfile = repository.loadLegalHelpProfile()
     val initialEntries =
       when {
         !hasSavedEntries -> starterPrivacyBrokerEntries()
@@ -30,8 +31,9 @@ class PrivacyOptOutViewModel @Inject constructor(
       PrivacyOptOutUiState(
         entries = initialEntries,
         selectedEntryId = initialEntries.firstOrNull()?.id,
+        legalHelpProfile = savedLegalHelpProfile.getOrDefault(LegalHelpProfile()),
         errorMessage =
-          if (hasSavedEntries && savedEntries.isFailure) {
+          if (hasSavedEntries && (savedEntries.isFailure || savedLegalHelpProfile.isFailure)) {
             "Saved tracker data could not be loaded. Import a backup or restore starter entries."
           } else {
             ""
@@ -55,6 +57,12 @@ class PrivacyOptOutViewModel @Inject constructor(
     _uiState.update { it.copy(importExportText = value, errorMessage = "", infoMessage = "") }
   }
 
+  fun updateLegalHelpProfile(transform: (LegalHelpProfile) -> LegalHelpProfile) {
+    val updated = transform(uiState.value.legalHelpProfile)
+    repository.saveLegalHelpProfile(updated)
+    _uiState.update { it.copy(legalHelpProfile = updated, infoMessage = "", errorMessage = "") }
+  }
+
   fun addEntry() {
     val newEntry =
       PrivacyBrokerEntry(
@@ -67,13 +75,13 @@ class PrivacyOptOutViewModel @Inject constructor(
         history = listOf(PrivacyHistoryEntry(title = "Entry created")),
       )
     saveEntries(entries = listOf(newEntry) + uiState.value.entries, selectedEntryId = newEntry.id)
-    showInfoMessage("Added a new tracker entry.")
+    setInfoMessage("Added a new tracker entry.")
   }
 
   fun restoreStarterEntries() {
     val entries = starterPrivacyBrokerEntries()
     saveEntries(entries = entries, selectedEntryId = entries.firstOrNull()?.id)
-    showInfoMessage("Restored starter broker entries.")
+    setInfoMessage("Restored starter broker entries.")
   }
 
   fun removeSelectedEntry() {
@@ -110,7 +118,7 @@ class PrivacyOptOutViewModel @Inject constructor(
         history = entry.history + PrivacyHistoryEntry(title = "Draft updated"),
       )
     }
-    showInfoMessage("Saved draft changes.")
+    setInfoMessage("Saved draft changes.")
   }
 
   fun markSubmitted() {
@@ -123,7 +131,7 @@ class PrivacyOptOutViewModel @Inject constructor(
           entry.history + PrivacyHistoryEntry(title = "Marked as submitted", notes = "Manual submission recorded."),
       )
     }
-    showInfoMessage("Recorded manual submission.")
+    setInfoMessage("Recorded manual submission.")
   }
 
   fun markFollowUpDue() {
@@ -135,7 +143,7 @@ class PrivacyOptOutViewModel @Inject constructor(
             PrivacyHistoryEntry(title = "Follow-up needed", notes = "Reminder created for follow-up."),
       )
     }
-    showInfoMessage("Marked follow-up as due.")
+    setInfoMessage("Marked follow-up as due.")
   }
 
   fun markCompleted() {
@@ -146,16 +154,16 @@ class PrivacyOptOutViewModel @Inject constructor(
         history = entry.history + PrivacyHistoryEntry(title = "Marked as completed"),
       )
     }
-    showInfoMessage("Recorded completion.")
+    setInfoMessage("Recorded completion.")
   }
 
   fun setDueInDays(days: Long) {
     updateSelectedEntry { entry -> entry.copy(followUpDueOn = defaultFollowUpDate(days)) }
-    showInfoMessage("Updated reminder date.")
+    setInfoMessage("Updated reminder date.")
   }
 
   fun exportEntries() {
-    val exported = repository.exportEntries(uiState.value.entries)
+    val exported = repository.exportEntries(uiState.value.entries, uiState.value.legalHelpProfile)
     _uiState.update {
       it.copy(importExportText = exported, infoMessage = "Exported tracker data to JSON.", errorMessage = "")
     }
@@ -164,21 +172,25 @@ class PrivacyOptOutViewModel @Inject constructor(
   fun importEntries() {
     val raw = uiState.value.importExportText.trim()
     if (raw.isEmpty()) {
-      showErrorMessage("Paste exported JSON before importing.")
+      setErrorMessage("Paste exported JSON before importing.")
       return
     }
-    val imported =
-      runCatching { repository.importEntries(raw) }
+    val importedData =
+      runCatching { repository.importData(raw) }
         .getOrElse {
-          showErrorMessage(it.message ?: "Failed to import tracker data.")
+          setErrorMessage(it.message ?: "Failed to import tracker data.")
           return
         }
-    if (imported.isEmpty()) {
-      showErrorMessage("Import did not contain any tracker entries.")
+    if (importedData.entries.isEmpty()) {
+      setErrorMessage("Import did not contain any tracker entries.")
       return
     }
-    saveEntries(entries = imported, selectedEntryId = imported.first().id)
-    showInfoMessage("Imported tracker data.")
+    saveAll(
+      entries = importedData.entries,
+      selectedEntryId = importedData.entries.first().id,
+      legalHelpProfile = importedData.legalHelpProfile,
+      message = "Imported tracker data.",
+    )
   }
 
   private fun saveEntries(
@@ -192,6 +204,25 @@ class PrivacyOptOutViewModel @Inject constructor(
         entries = entries,
         selectedEntryId = selectedEntryId ?: entries.firstOrNull()?.id,
         infoMessage = message ?: "",
+        errorMessage = "",
+      )
+    }
+  }
+
+  private fun saveAll(
+    entries: List<PrivacyBrokerEntry>,
+    selectedEntryId: String?,
+    legalHelpProfile: LegalHelpProfile,
+    message: String,
+  ) {
+    repository.saveEntries(entries)
+    repository.saveLegalHelpProfile(legalHelpProfile)
+    _uiState.update {
+      it.copy(
+        entries = entries,
+        selectedEntryId = selectedEntryId ?: entries.firstOrNull()?.id,
+        legalHelpProfile = legalHelpProfile,
+        infoMessage = message,
         errorMessage = "",
       )
     }
@@ -211,6 +242,10 @@ class PrivacyOptOutViewModel @Inject constructor(
 
   fun onExternalActionFailed(message: String) {
     setErrorMessage(message)
+  }
+
+  fun onLegalHelpChecklistCopied() {
+    setInfoMessage("Copied legal help checklist.")
   }
 
   private fun setInfoMessage(message: String) {

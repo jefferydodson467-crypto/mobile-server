@@ -20,6 +20,11 @@ class PrivacyOptOutRepository @Inject constructor(@ApplicationContext context: C
     return prefs.contains(KEY_ENTRIES)
   }
 
+  fun loadLegalHelpProfile(): Result<LegalHelpProfile> {
+    val raw = prefs.getString(KEY_LEGAL_HELP_PROFILE, null) ?: return Result.success(LegalHelpProfile())
+    return runCatching { storageJson.decodeFromString<LegalHelpProfile>(raw) }
+  }
+
   fun loadEntries(): Result<List<PrivacyBrokerEntry>> {
     val raw = prefs.getString(KEY_ENTRIES, null) ?: return Result.success(emptyList())
     return runCatching { storageJson.decodeFromString<List<PrivacyBrokerEntry>>(raw) }
@@ -29,13 +34,19 @@ class PrivacyOptOutRepository @Inject constructor(@ApplicationContext context: C
     prefs.edit { putString(KEY_ENTRIES, storageJson.encodeToString(entries)) }
   }
 
-  fun importEntries(rawJson: String): List<PrivacyBrokerEntry> {
+  fun saveLegalHelpProfile(profile: LegalHelpProfile) {
+    prefs.edit { putString(KEY_LEGAL_HELP_PROFILE, storageJson.encodeToString(profile)) }
+  }
+
+  fun importData(rawJson: String): PrivacyTrackerExport {
     val wrapped = runCatching { exportJson.decodeFromString<PrivacyTrackerExport>(rawJson) }.getOrNull()
     val entries =
       wrapped?.entries
         ?: runCatching { exportJson.decodeFromString<List<PrivacyBrokerEntry>>(rawJson) }
           .getOrElse { throw SerializationException("Invalid import format.") }
-    return entries
+    return PrivacyTrackerExport(
+      entries =
+        entries
       .map { entry ->
         val subject =
           if (entry.requestSubject.isBlank()) {
@@ -51,15 +62,23 @@ class PrivacyOptOutRepository @Inject constructor(@ApplicationContext context: C
           }
         entry.copy(requestSubject = subject, requestBody = body, updatedAt = nowTimestamp())
       }
-      .distinctBy { it.id }
+      .distinctBy { it.id },
+      legalHelpProfile = wrapped?.legalHelpProfile ?: LegalHelpProfile(),
+    )
   }
 
-  fun exportEntries(entries: List<PrivacyBrokerEntry>): String {
-    return exportJson.encodeToString(PrivacyTrackerExport(entries = entries))
+  fun exportEntries(entries: List<PrivacyBrokerEntry>, legalHelpProfile: LegalHelpProfile): String {
+    return exportJson.encodeToString(
+      PrivacyTrackerExport(
+        entries = entries,
+        legalHelpProfile = legalHelpProfile,
+      )
+    )
   }
 
   companion object {
     private const val PREFS_NAME = "privacy_opt_out_tracker"
     private const val KEY_ENTRIES = "entries"
+    private const val KEY_LEGAL_HELP_PROFILE = "legal_help_profile"
   }
 }
